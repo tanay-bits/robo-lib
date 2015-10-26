@@ -149,7 +149,7 @@ def TransToRp(T):
     assert T.shape == (4,4), "Input not a 4x4 matrix"
 
     R = T[:3,:3]
-    assert is_rot_matrix(R), "Input not a valid rotation matrix"
+    assert is_rot_matrix(R), "Input not a valid transformation matrix"
 
     p = T[:3,-1]
     p.shape = (3,1)
@@ -272,7 +272,37 @@ def MatrixExp6(STheta):
     return T
 
 
+def MatrixLog6(T):
+    T = asarray(T)
+    assert T.shape == (4,4), "Input not a 4x4 matrix"
 
+    R, p = TransToRp(T)
+
+    if is_identity_matrix(R):
+        w_unit = zeros((3,1))
+        vTheta = p
+        STheta = vstack((w_unit, p))
+        return STheta
+
+    if trace(R) > -1.001 and trace(R) < -0.999:
+        theta = math.pi
+        wTheta = MatrixLog3(R)
+        w_unit = wTheta/theta
+        w_so3mat = VecToso3(w_unit)
+        Ginv = identity(3)/theta - w_so3mat/2 + (1/theta - 1/(math.tan(theta/2)*2))*dot(w_so3mat,w_so3mat)
+        v_unit = dot(Ginv, p)
+        vTheta = v_unit*theta
+        STheta = vstack((wTheta, vTheta))
+        return STheta
+
+    theta = math.acos((trace(R)-1)/2)
+    w_so3mat = (R - R.T)/(2*math.sin(theta))
+    Ginv = identity(3)/theta - w_so3mat/2 + (1/theta - 1/(math.tan(theta/2)*2))*dot(w_so3mat,w_so3mat)
+    wTheta = MatrixLog3(R)
+    v_unit = dot(Ginv, p)
+    vTheta = v_unit*theta
+    STheta = vstack((wTheta, vTheta)) 
+    return STheta
 
 
 
