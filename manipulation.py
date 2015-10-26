@@ -136,8 +136,8 @@ def MatrixLog3(R):
 def RpToTrans(R,p):
     p = asarray(p)
     R = asarray(R)
-    assert len(p) == 3, "Given point not a 3-vector"
-    assert is_rot_matrix(R), "Given R not a valid rotation matrix"
+    assert len(p) == 3, "Point not a 3-vector"
+    assert is_rot_matrix(R), "R not a valid rotation matrix"
 
     p.shape = (3,1)
     T = vstack((hstack((R,p)), array([0,0,0,1])))
@@ -240,9 +240,9 @@ def AxisAng6(STheta):
     theta = linalg.norm(w)
     w_unit = normalize(w)
     w_unit.shape = (3,1)
-    v_wnorm = v/theta
-    v_wnorm.shape = (3,1)
-    S = vstack((w_unit,v_wnorm))
+    v_unit = v/theta
+    v_unit.shape = (3,1)
+    S = vstack((w_unit,v_unit))
     return S, theta
 
 
@@ -250,19 +250,25 @@ def MatrixExp6(STheta):
     STheta = asarray(STheta)
     assert len(STheta) == 6, 'Input not a 6-vector'
 
-    theta = AxisAng6(STheta)[1]
+    S, theta = AxisAng6(STheta)
 
-    r = STheta[:3]
-    r.shape = (3,1)
+    w_unit = S[:3]
+    v_unit = S[3:]
+
     vTheta = STheta[3:]
     vTheta.shape = (3,1)
     
-    if linalg.norm(r) == 0:
-        T = vstack((hstack((identity(3), vTheta)), array([0,0,0,1])))
+    if linalg.norm(w_unit) == 0:
+        R = identity(3)
+        p = vTheta
+        T = RpToTrans(R,p)
         return T
 
+    r = w_unit*theta
     R = MatrixExp3(r)
-    T = identity(3) + math.sin(theta)*w_so3mat + (1-math.cos(theta))*dot(w_so3mat, w_so3mat)
+    w_so3mat = VecToso3(w_unit)
+    p = dot((identity(3)*theta+(1-math.cos(theta))*w_so3mat+(theta-math.sin(theta))*dot(w_so3mat,w_so3mat)), v_unit) 
+    T = RpToTrans(R,p)
     return T
 
 
