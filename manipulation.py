@@ -1,30 +1,42 @@
 import math
 from numpy import *
-from random import uniform
+
+### HELPER FUNCTIONS ###
+def randomVec(x):
+    '''
+    Generates a vector of length x, each component being a random float b/w -10 and 10
+    '''
+    return random.uniform(-10,10,(x,1))
 
 
 def randomUnitAxisAngle():
+    '''
+    Generates a random unit axis and an angle
+    '''
     # Random longitude
-    u = uniform(0, 1)
+    u = random.uniform(0, 1)
     longitude = 2*math.pi*u
 
     # Random latitude
-    v = uniform(0, 1)
+    v = random.uniform(0, 1)
     latitude = 2*math.pi*v
 
-    # Random rotation axis
+    # Random unit rotation axis
     axis = zeros((3,1))
     axis[0] = math.cos(latitude)*math.cos(longitude)
     axis[1] = math.cos(latitude)*math.sin(longitude)
     axis[2] = math.sin(latitude)
 
-    # Random angle
-    theta = 2*math.pi*uniform(0, 1)
+    # Random angle b/w 0 and 2pi
+    theta = 2*math.pi*random.uniform(0, 1)
 
     return axis, theta
 
 
 def normalize(v):
+    '''
+    Returns the normalized version of the vector v
+    '''
     norm = linalg.norm(v)
     if norm == 0: 
        return v
@@ -32,6 +44,9 @@ def normalize(v):
 
 
 def is_identity_matrix(M):
+    '''
+    Returns True if input M is close to an identity matrix
+    '''
     if len(M) != len(M[0]):
         return False
 
@@ -53,6 +68,9 @@ def is_identity_matrix(M):
 
 
 def is_rot_matrix(R):
+    '''
+    Returns True if input R is 
+    '''
     return is_identity_matrix(dot(R.T,R)) and (abs(linalg.det(R)-1) < 0.001)
 
 
@@ -108,8 +126,7 @@ def MatrixExp3(r):
 
 def MatrixLog3(R):
     R = asarray(R)
-    if not is_rot_matrix(R):
-        raise RuntimeError('Not a valid rotation matrix')
+    assert is_rot_matrix(R), 'Not a valid rotation matrix'
 
     if is_identity_matrix(R):
         return zeros((3,1))
@@ -305,7 +322,25 @@ def MatrixLog6(T):
     return STheta
 
 
+def FKinFixed(M,Slist,thetalist):
+    R_M = TransToRp(M)[0]
+
+    c = MatrixExp6(Slist[0]*thetalist[0])
+    for i in range(len(thetalist)-1):        
+        nex = MatrixExp6(Slist[i+1]*thetalist[i+1])
+        c = dot(c, nex)
+
+    T_oe = dot(c, M)
+    return T_oe
 
 
+def FKinBody(M,Slist,thetalist):
+    R_M = TransToRp(M)[0]
 
+    c = dot(M, MatrixExp6(Slist[0]*thetalist[0]))
+    for i in range(len(thetalist)-1):        
+        nex = MatrixExp6(Slist[i+1]*thetalist[i+1])
+        c = dot(c, nex)
 
+    T_oe = c
+    return T_oe
