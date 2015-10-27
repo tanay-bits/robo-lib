@@ -69,23 +69,44 @@ def is_identity_matrix(M):
 
 def is_rot_matrix(R):
     '''
-    Returns True if input R is 
+    Returns True if input R is a valid rotation matrix.
     '''
+    R = asarray(R)
     return is_identity_matrix(dot(R.T,R)) and (abs(linalg.det(R)-1) < 0.001)
 
 
+### MAIN FUNCTIONS ###
 def RotInv(R):
+    '''
+    Takes a rotation matrix belonging to SO(3) and returns its inverse.
+    Example:
+
+    R = [[.707,-.707,0],[.707,.707,0],[0,0,1]]
+    RotInv(R)
+    >> array([[ 0.707,  0.707,  0.   ],
+              [-0.707,  0.707,  0.   ],
+              [ 0.   ,  0.   ,  1.   ]])
+    '''
     R = asarray(R)
-    if not is_rot_matrix(R):
-        raise RuntimeError('Not a valid rotation matrix')
+    assert is_rot_matrix(R), 'Not a valid rotation matrix'
 
     return R.T
 
 
 def VecToso3(w):
+    '''
+    Takes a 3-vector representing angular velocity and returns the 3x3 skew-symmetric matrix version, an element
+    of so(3).
+    Example:
+
+    w = [2, 1, -4]
+    VecToso3(w)
+    >> array([[ 0,  4,  1],
+              [-4,  0, -2],
+              [-1,  2,  0]])
+    '''
     w = asarray(w)
-    if len(w) != 3:
-        raise RuntimeError('Not a 3-vector')
+    assert len(w) == 3, 'Not a 3-vector'
 
     w = w.flatten()
     w_so3mat = array([[0, -w[2], w[1]], [w[2], 0, -w[0]], [-w[1], w[0], 0]])
@@ -93,18 +114,37 @@ def VecToso3(w):
 
 
 def so3ToVec(w_so3mat):
+    '''
+    Takes a 3x3 skew-symmetric matrix (an element of so(3)) and returns the corresponding 3-vector.
+    Example:
+
+    w_so3mat = [[ 0,  4,  1],[-4,  0, -2],[-1,  2,  0]]  
+    so3ToVec(w_so3mat)
+    >> array([[ 2],
+              [ 1],
+              [-4]]) 
+    '''
     w_so3mat = asarray(w_so3mat)
-    if w_so3mat.shape != (3,3):
-        raise RuntimeError('Not a 3x3 matrix')
+    assert w_so3mat.shape == (3,3), 'Not a 3x3 matrix'
 
     w = array([[w_so3mat[2,1]], [w_so3mat[0,2]], [w_so3mat[1,0]]])
     return w
 
 
 def AxisAng3(r):
+    '''
+    Takes a 3-vector of exp coords r = w_unit*theta and returns w_unit and theta.
+    Example:
+    
+    r = [2, 1, -4]
+    w_unit, theta = AxisAng3(r)
+    w_unit
+    >> array([ 0.43643578,  0.21821789, -0.87287156])
+    theta
+    >> 4.5825756949558398
+    '''
     r = asarray(r)
-    if len(r) != 3:
-        raise RuntimeError('Not a 3-vector')
+    assert len(r) == 3, 'Not a 3-vector'
 
     theta = linalg.norm(r)
     w_unit = normalize(r)
@@ -113,18 +153,39 @@ def AxisAng3(r):
 
 
 def MatrixExp3(r):
+    '''
+    Takes a 3-vector of exp coords r = w_unit*theta and returns the corresponding
+    rotation matrix R (an element of SO(3)).
+    Example:
+
+    r = [2, 1, -4]
+    MatrixExp3(r)
+    >> array([[ 0.08568414, -0.75796072, -0.64664811],
+              [ 0.97309386, -0.07566572,  0.2176305 ],
+              [-0.21388446, -0.64789679,  0.73108357]])
+    '''
     r = asarray(r)
-    if len(r) != 3:
-        raise RuntimeError('Not a 3-vector')
+    assert len(r) == 3, 'Not a 3-vector'
 
     w_unit, theta = AxisAng3(r)
     w_so3mat = VecToso3(w_unit)
 
     R = identity(3) + math.sin(theta)*w_so3mat + (1-math.cos(theta))*dot(w_so3mat, w_so3mat)
+    assert is_rot_matrix(R), 'Did not produce a valid rotation matrix'
     return R
 
 
 def MatrixLog3(R):
+    '''
+    Takes a rotation matrix R and returns the corresponding 3-vector of exp coords r = w_unit*theta.
+    Example:
+
+    R = [[.707,-.707,0],[.707,.707,0],[0,0,1]]
+    MatrixLog3(R)
+    >> array([[ 0.        ],
+              [ 0.        ],
+              [ 0.78554916]])
+    '''
     R = asarray(R)
     assert is_rot_matrix(R), 'Not a valid rotation matrix'
 
@@ -137,10 +198,10 @@ def MatrixLog3(R):
         if c == R[2,2]:
             w_unit = array([[R[0,2]],[R[1,2]],[1+c]])*1/((2*(1+c))**0.5)
             return w_unit*theta
-        if c == R[1,1]:
+        elif c == R[1,1]:
             w_unit = array([[R[0,1]],[1+c],[R[2,1]]])*1/((2*(1+c))**0.5)
             return w_unit*theta
-        if c == R[0,0]:
+        elif c == R[0,0]:
             w_unit = array([[1+c],[R[1,0]],[R[2,0]]])*1/((2*(1+c))**0.5)
             return w_unit*theta
 
@@ -151,6 +212,19 @@ def MatrixLog3(R):
 
 
 def RpToTrans(R,p):
+    '''
+    Takes a rotation matrix R and a point (3-vector) p, and returns the corresponding
+    4x4 transformation matrix T, an element of SE(3).
+    Example:
+
+    R = [[.707,-.707,0],[.707,.707,0],[0,0,1]]
+    p = [5,-4,9]
+    RpToTrans(R,p)
+    >> array([[ 0.707, -0.707,  0.   ,  5.   ],
+              [ 0.707,  0.707,  0.   , -4.   ],
+              [ 0.   ,  0.   ,  1.   ,  9.   ],
+              [ 0.   ,  0.   ,  0.   ,  1.   ]])    
+    '''
     p = asarray(p)
     R = asarray(R)
     assert len(p) == 3, "Point not a 3-vector"
@@ -162,6 +236,21 @@ def RpToTrans(R,p):
 
 
 def TransToRp(T):
+    '''
+    Takes a transformation matrix T and returns the corresponding R and p.
+    Example:
+
+    T = [[0.707,-0.707,0,5],[0.707,0.707,0,-4],[0,0,1,9],[0,0,0,1]]
+    R, p = TransToRp(T)
+    R
+    >> array([[ 0.707, -0.707,  0.   ],
+              [ 0.707,  0.707,  0.   ],
+              [ 0.   ,  0.   ,  1.   ]])
+    p
+    >> array([[ 5.],
+              [-4.],
+              [ 9.]])
+    '''
     T = asarray(T)
     assert T.shape == (4,4), "Input not a 4x4 matrix"
 
@@ -175,6 +264,17 @@ def TransToRp(T):
 
 
 def TransInv(T):
+    '''
+    Returns inverse of transformation matrix T.
+    Example:
+
+    T = [[0.707,-0.707,0,5],[0.707,0.707,0,-4],[0,0,1,9],[0,0,0,1]]
+    TransInv(T)
+    >> array([[ 0.707,  0.707,  0.   , -0.707],
+              [-0.707,  0.707,  0.   ,  6.363],
+              [ 0.   ,  0.   ,  1.   , -9.   ],
+              [ 0.   ,  0.   ,  0.   ,  1.   ]])
+    '''
     T = asarray(T)
     R, p = TransToRp(T)
 
@@ -183,6 +283,18 @@ def TransInv(T):
 
 
 def VecTose3(V):
+    '''
+    Takes a 6-vector (representing spatial velocity) and returns the corresponding 4x4 matrix,
+    an element of se(3).
+    Example:
+
+    V = [3,2,5,-3,7,0]
+    VecTose3(V)
+    >> array([[ 0., -5.,  2., -3.],
+              [ 5.,  0., -3.,  7.],
+              [-2.,  3.,  0.,  0.],
+              [ 0.,  0.,  0.,  0.]])
+    '''
     V = asarray(V)
     assert len(V) == 6, "Input not a 6-vector"
     
@@ -195,6 +307,22 @@ def VecTose3(V):
 
 
 def se3ToVec(V_se3mat):
+    '''
+    Takes an element of se(3) and returns the corresponding (6-vector) spatial velocity.
+    Example:
+
+    V_se3mat = [[ 0., -5.,  2., -3.],
+                [ 5.,  0., -3.,  7.],
+                [-2.,  3.,  0.,  0.],
+                [ 0.,  0.,  0.,  0.]]
+    se3ToVec(V_se3mat)
+    >> array([[ 3.],
+              [ 2.],
+              [ 5.],
+              [-3.],
+              [ 7.],
+              [ 0.]])
+    '''
     V_se3mat = asarray(V_se3mat)
     assert V_se3mat.shape == (4,4), "Matrix is not 4x4"
 
@@ -209,6 +337,19 @@ def se3ToVec(V_se3mat):
 
 
 def Adjoint(T):
+    '''
+    Takes a transformation matrix T and returns the 6x6 adjoint representation [Ad_T]
+    Example:
+
+    T = [[0.707,-0.707,0,5],[0.707,0.707,0,-4],[0,0,1,9],[0,0,0,1]]
+    Adjoint(T)
+    >> array([[ 0.707, -0.707,  0.   ,  0.   ,  0.   ,  0.   ],
+              [ 0.707,  0.707,  0.   ,  0.   ,  0.   ,  0.   ],
+              [ 0.   ,  0.   ,  1.   ,  0.   ,  0.   ,  0.   ],
+              [-6.363, -6.363, -4.   ,  0.707, -0.707,  0.   ],
+              [ 6.363, -6.363, -5.   ,  0.707,  0.707,  0.   ],
+              [ 6.363,  0.707,  0.   ,  0.   ,  0.   ,  1.   ]])
+    '''
     T = asarray(T)
     assert T.shape == (4,4), "Input not a 4x4 matrix"
 
@@ -222,25 +363,59 @@ def Adjoint(T):
     return adT
 
 
-def ScrewToAxis(q,shat,h):
+def ScrewToAxis(q,s_hat,h):
+    '''
+    Takes a point q (3-vector) on the screw, a unit axis s_hat (3-vector) in the direction of the screw,
+    and a screw pitch h (scalar), and returns the corresponding 6-vector screw axis S (a normalized 
+    spatial velocity).
+    Example:
+
+    q = [3,0,0]
+    s_hat = [0,0,1]
+    h = 2
+    ScrewToAxis(q,s_hat,h)
+    >> array([[ 0],
+              [ 0],
+              [ 1],
+              [ 0],
+              [-3],
+              [ 2]])
+    '''
     q = asarray(q)
-    shat = asarray(shat)
-    assert len(q) == len(shat) == 3, "q or shat not a 3-vector"
-    assert abs(linalg.norm(shat) - 1) < 0.001, "shat not a valid unit vector"
+    s_hat = asarray(s_hat)
+    assert len(q) == len(s_hat) == 3, "q or s_hat not a 3-vector"
+    assert abs(linalg.norm(s_hat) - 1) < 0.001, "s_hat not a valid unit vector"
     assert isscalar(h), "h not a scalar"
 
     q = q.flatten()
-    shat = shat.flatten()
+    s_hat = s_hat.flatten()
 
-    v_wnorm = -cross(shat, q) + h*shat
+    v_wnorm = -cross(s_hat, q) + h*s_hat
     v_wnorm.shape = (3,1)
-    w_unit = shat
+    w_unit = s_hat
     w_unit.shape = (3,1)
     S = vstack((w_unit,v_wnorm))
     return S
 
 
 def AxisAng6(STheta):
+    '''
+    Takes a 6-vector of exp coords STheta and returns the screw axis S and the distance traveled along/
+    about the screw axis theta.
+    Example:
+
+    STheta = [0,0,1,0,-3,2]
+    S, theta = AxisAng6(STheta)
+    S
+    >> array([[ 0.],
+              [ 0.],
+              [ 1.],
+              [ 0.],
+              [-3.],
+              [ 2.]])
+    theta
+    >> 1.0
+    '''
     STheta = asarray(STheta)
     assert len(STheta) == 6, 'Input not a 6-vector'
 
@@ -264,6 +439,17 @@ def AxisAng6(STheta):
 
 
 def MatrixExp6(STheta):
+    '''
+    Takes a 6-vector of exp coords STheta and returns the corresponding 4x4 transformation matrix T.
+    Example:
+
+    STheta = [0,0,1,0,-3,2]
+    MatrixExp6(STheta)
+    >> array([[ 0.54030231, -0.84147098,  0.        ,  1.37909308],
+              [ 0.84147098,  0.54030231,  0.        , -2.52441295],
+              [ 0.        ,  0.        ,  1.        ,  2.        ],
+              [ 0.        ,  0.        ,  0.        ,  1.        ]])
+    '''
     STheta = asarray(STheta)
     assert len(STheta) == 6, 'Input not a 6-vector'
 
@@ -290,6 +476,22 @@ def MatrixExp6(STheta):
 
 
 def MatrixLog6(T):
+    '''
+    Takes a transformation matrix T and returns the corresponding 6-vector of exp coords STheta.
+    Example:
+
+    T = [[ 0.54030231, -0.84147098,  0.        ,  1.37909308],
+         [ 0.84147098,  0.54030231,  0.        , -2.52441295],
+         [ 0.        ,  0.        ,  1.        ,  2.        ],
+         [ 0.        ,  0.        ,  0.        ,  1.        ]]
+    MatrixLog6(T):
+    >> array([[  0.00000000e+00],
+              [  0.00000000e+00],
+              [  9.99999995e-01],
+              [  1.12156694e-08],
+              [ -2.99999999e+00],
+              [  2.00000000e+00]])
+    '''
     T = asarray(T)
     assert T.shape == (4,4), "Input not a 4x4 matrix"
 
@@ -323,6 +525,31 @@ def MatrixLog6(T):
 
 
 def FKinFixed(M,Slist,thetalist):
+    '''
+    Takes
+    - an element of SE(3): M representing the configuration of the end-effector frame when
+      the manipulator is at its home position (all joint thetas = 0),
+    - a list of screw axes Slist for the joints w.r.t fixed world frame,
+    - a list of joint coords thetalist,
+    and returns the T of end-effector frame w.r.t. fixed world frame when the joints are at
+    the thetas specified.
+    Example:
+
+    S1 = array([[0],[0],[1],[4],[0],[0]])
+    S2 = array([[0],[0],[0],[0],[1],[0]])
+    S3 = array([[0],[0],[-1],[-6],[0],[-0.1]])
+    Slist = [S1, S2, S3]
+    thetalist = [math.pi/2, 3, math.pi]
+    M = array([[-1,  0,  0,  0],
+               [ 0,  1,  0,  6],
+               [ 0,  0, -1,  2],
+               [ 0,  0,  0,  1]])
+    FKinFixed(M,Slist,thetalist)
+    >> array([[ -1.14423775e-17,   1.00000000e+00,   0.00000000e+00, -5.00000000e+00],
+              [  1.00000000e+00,   1.14423775e-17,   0.00000000e+00, 4.00000000e+00],
+              [  0.00000000e+00,   0.00000000e+00,  -1.00000000e+00, 1.68584073e+00],
+              [  0.00000000e+00,   0.00000000e+00,   0.00000000e+00, 1.00000000e+00]])
+    '''
     R_M = TransToRp(M)[0]
 
     c = MatrixExp6(Slist[0]*thetalist[0])
@@ -335,6 +562,25 @@ def FKinFixed(M,Slist,thetalist):
 
 
 def FKinBody(M,Slist,thetalist):
+    '''
+    Same as FKinFixed, except here the screw axes are expressed in the end-effector frame.
+    Example:
+
+    S1b = array([[0],[0],[1],[4],[0],[0]])
+    S2b = array([[0],[0],[0],[0],[1],[0]])
+    S3b = array([[0],[0],[-1],[-6],[0],[-0.1]])
+    Sblist = [S1b, S2b, S3b]
+    thetalist = [math.pi/2, 3, math.pi]
+    M = array([[-1,  0,  0,  0],
+               [ 0,  1,  0,  6],
+               [ 0,  0, -1,  2],
+               [ 0,  0,  0,  1]])
+    FKinBody(M,Sblist,thetalist)
+    >> array([[ -1.14423775e-17,   1.00000000e+00,   0.00000000e+00, -5.00000000e+00],
+              [  1.00000000e+00,   1.14423775e-17,   0.00000000e+00, 4.00000000e+00],
+              [  0.00000000e+00,   0.00000000e+00,  -1.00000000e+00, 1.68584073e+00],
+              [  0.00000000e+00,   0.00000000e+00,   0.00000000e+00, 1.00000000e+00]])
+    '''
     R_M = TransToRp(M)[0]
 
     c = dot(M, MatrixExp6(Slist[0]*thetalist[0]))
@@ -344,3 +590,6 @@ def FKinBody(M,Slist,thetalist):
 
     T_oe = c
     return T_oe
+
+
+### end of HW2 functions ###
