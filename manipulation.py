@@ -566,9 +566,9 @@ def FKinBody(M,Slist,thetalist):
     Same as FKinFixed, except here the screw axes are expressed in the end-effector frame.
     Example:
 
-    S1b = array([[0],[0],[1],[4],[0],[0]])
+    S1b = array([[0],[0],[-1],[2],[0],[0]])
     S2b = array([[0],[0],[0],[0],[1],[0]])
-    S3b = array([[0],[0],[-1],[-6],[0],[-0.1]])
+    S3b = array([[0],[0],[1],[0],[0],[0.1]])
     Sblist = [S1b, S2b, S3b]
     thetalist = [math.pi/2, 3, math.pi]
     M = array([[-1,  0,  0,  0],
