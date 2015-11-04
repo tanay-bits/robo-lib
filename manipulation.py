@@ -535,26 +535,30 @@ def FKinFixed(M,Slist,thetalist):
     the thetas specified.
     Example:
 
-    S1 = array([[0],[0],[1],[4],[0],[0]])
-    S2 = array([[0],[0],[0],[0],[1],[0]])
-    S3 = array([[0],[0],[-1],[-6],[0],[-0.1]])
+    S1 = [0,0,1,4,0,0]
+    S2 = [0,0,0,0,1,0]
+    S3 = [0,0,-1,-6,0,-0.1]
     Slist = [S1, S2, S3]
     thetalist = [math.pi/2, 3, math.pi]
-    M = array([[-1,  0,  0,  0],
-               [ 0,  1,  0,  6],
-               [ 0,  0, -1,  2],
-               [ 0,  0,  0,  1]])
+    M = [[-1,  0,  0,  0],
+         [ 0,  1,  0,  6],
+         [ 0,  0, -1,  2],
+         [ 0,  0,  0,  1]]
     FKinFixed(M,Slist,thetalist)
     >> array([[ -1.14423775e-17,   1.00000000e+00,   0.00000000e+00, -5.00000000e+00],
               [  1.00000000e+00,   1.14423775e-17,   0.00000000e+00, 4.00000000e+00],
               [  0.00000000e+00,   0.00000000e+00,  -1.00000000e+00, 1.68584073e+00],
               [  0.00000000e+00,   0.00000000e+00,   0.00000000e+00, 1.00000000e+00]])
     '''
+    M = asarray(M)
     R_M = TransToRp(M)[0]
+    assert M.shape == (4,4), "M not a 4x4 matrix"
+    assert len(Slist[0]) == 6, "Incorrect Screw Axis length"
+    Slist = asarray(Slist).T
 
-    c = MatrixExp6(Slist[0]*thetalist[0])
+    c = MatrixExp6(Slist[:,0]*thetalist[0])
     for i in range(len(thetalist)-1):        
-        nex = MatrixExp6(Slist[i+1]*thetalist[i+1])
+        nex = MatrixExp6(Slist[:,i+1]*thetalist[i+1])
         c = dot(c, nex)
 
     T_oe = dot(c, M)
@@ -566,30 +570,102 @@ def FKinBody(M,Slist,thetalist):
     Same as FKinFixed, except here the screw axes are expressed in the end-effector frame.
     Example:
 
-    S1b = array([[0],[0],[-1],[2],[0],[0]])
-    S2b = array([[0],[0],[0],[0],[1],[0]])
-    S3b = array([[0],[0],[1],[0],[0],[0.1]])
+    S1b = [0,0,-1,2,0,0]
+    S2b = [0,0,0,0,1,0]
+    S3b = [0,0,1,0,0,0.1]
     Sblist = [S1b, S2b, S3b]
     thetalist = [math.pi/2, 3, math.pi]
-    M = array([[-1,  0,  0,  0],
-               [ 0,  1,  0,  6],
-               [ 0,  0, -1,  2],
-               [ 0,  0,  0,  1]])
+    M = [[-1,  0,  0,  0],
+         [ 0,  1,  0,  6],
+         [ 0,  0, -1,  2],
+         [ 0,  0,  0,  1]]
     FKinBody(M,Sblist,thetalist)
     >> array([[ -1.14423775e-17,   1.00000000e+00,   0.00000000e+00, -5.00000000e+00],
               [  1.00000000e+00,   1.14423775e-17,   0.00000000e+00, 4.00000000e+00],
               [  0.00000000e+00,   0.00000000e+00,  -1.00000000e+00, 1.68584073e+00],
               [  0.00000000e+00,   0.00000000e+00,   0.00000000e+00, 1.00000000e+00]])
     '''
+    M = asarray(M)
     R_M = TransToRp(M)[0]
+    assert M.shape == (4,4), "M not a 4x4 matrix"
+    assert len(Slist[0]) == 6, "Incorrect Screw Axis length"
+    Slist = asarray(Slist).T
 
-    c = dot(M, MatrixExp6(Slist[0]*thetalist[0]))
+    c = dot(M, MatrixExp6(Slist[:,0]*thetalist[0]))
     for i in range(len(thetalist)-1):        
-        nex = MatrixExp6(Slist[i+1]*thetalist[i+1])
+        nex = MatrixExp6(Slist[:,i+1]*thetalist[i+1])
         c = dot(c, nex)
 
     T_oe = c
     return T_oe
 
 
-### end of HW2 functions ###
+### end of HW2 functions #############################
+### start of HW1 functions ###########################
+
+def FixedJacobian(Slist,thetalist):
+    '''
+    Takes a list of joint angles (thetalist) and a list of screw axes (Slist) expressed in
+    fixed space frame, and returns the space Jacobian (a 6xN matrix, where N is the # joints).
+    Example:
+
+    S1 = [0,0,1,4,0,0]
+    S2 = [0,0,0,0,1,0]
+    S3 = [0,0,-1,-6,0,-0.1]
+    Slist = [S1, S2, S3]
+    thetalist = [math.pi/2, 3, math.pi]
+    FixedJacobian(Slist,thetalist)
+    >> array([[  0.00000000e+00,   0.00000000e+00,   0.00000000e+00],
+              [  0.00000000e+00,   0.00000000e+00,   0.00000000e+00],
+              [  1.00000000e+00,   0.00000000e+00,  -1.00000000e+00],
+              [  4.00000000e+00,  -1.00000000e+00,  -4.00000000e+00],
+              [  0.00000000e+00,   1.11022302e-16,  -5.00000000e+00],
+              [  0.00000000e+00,   0.00000000e+00,  -1.00000000e-01]])
+        '''
+    N = len(thetalist)
+    J = zeros((6,N))
+    Slist = asarray(Slist).T
+
+    J[:,0] = Slist[:,0]
+    for k in range(1,N):
+        c = MatrixExp6(Slist[:,0]*thetalist[0])
+        for i in range(1,len(thetalist)-1):        
+            nex = MatrixExp6(Slist[:,i]*thetalist[i])
+            c = dot(c, nex)
+        J[:,k] = dot(Adjoint(c), Slist[:,k])
+
+    return J
+
+
+def BodyJacobian(Slist,thetalist):
+    '''
+    Takes a list of joint angles (thetalist) and a list of screw axes (Slist) expressed in
+    end-effector body frame, and returns the body Jacobian (a 6xN matrix, where N is the # joints).
+    Example:
+    
+    S1b = [0,0,-1,2,0,0]
+    S2b = [0,0,0,0,1,0]
+    S3b = [0,0,1,0,0,0.1]
+    Sblist = [S1b, S2b, S3b]
+    thetalist = [math.pi/2, 3, math.pi]
+    BodyJacobian(Sblist,thetalist)
+    >> array([[  0.00000000e+00,   0.00000000e+00,   0.00000000e+00],
+              [  0.00000000e+00,   0.00000000e+00,   0.00000000e+00],
+              [ -1.00000000e+00,   0.00000000e+00,   1.00000000e+00],
+              [ -5.00000000e+00,   1.22464680e-16,   0.00000000e+00],
+              [ -6.12323400e-16,  -1.00000000e+00,   0.00000000e+00],
+              [  0.00000000e+00,   0.00000000e+00,   1.00000000e-01]])
+    '''
+    N = len(thetalist)
+    J = zeros((6,N))
+    Slist = asarray(Slist).T
+
+    J[:,N-1] = Slist[:,N-1]
+    for k in range(N-1):
+        c = MatrixExp6(-Slist[:,k+1]*thetalist[k+1])
+        for i in range(k+2, len(thetalist)):        
+            nex = MatrixExp6(-Slist[:,i]*thetalist[i])
+            c = dot(nex, c)
+        J[:,k] = dot(Adjoint(c), Slist[:,k])
+
+    return J
