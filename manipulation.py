@@ -561,8 +561,8 @@ def FKinFixed(M,Slist,thetalist):
         nex = MatrixExp6(Slist[:,i+1]*thetalist[i+1])
         c = dot(c, nex)
 
-    T_oe = dot(c, M)
-    return T_oe
+    T_se = dot(c, M)
+    return T_se
 
 
 def FKinBody(M,Slist,thetalist):
@@ -596,8 +596,8 @@ def FKinBody(M,Slist,thetalist):
         nex = MatrixExp6(Slist[:,i+1]*thetalist[i+1])
         c = dot(c, nex)
 
-    T_oe = c
-    return T_oe
+    T_se = c
+    return T_se
 
 
 ### end of HW2 functions #############################
@@ -669,3 +669,36 @@ def BodyJacobian(Slist,thetalist):
         J[:,k] = dot(Adjoint(c), Slist[:,k])
 
     return J
+
+
+def IKinBody(Slist, M, T_sd, thetalist_init, wthresh, vthresh):
+    T_sd = asarray(T_sd)
+    assert T_sd.shape == (4,4), "T_sd not a 4x4 matrix"
+    
+    maxiterates = 100
+    
+    N = len(thetalist_init)
+
+    jointAngles = asarray(thetalist_init).reshape(1,N)
+
+    Vb = MatrixLog6(dot(TransInv(FKinBody(M, Slist, thetalist_init)), T_sd))
+    wb = Vb[:3, 0]
+    vb = Vb[3:, 0]
+
+    thetalist_i = asarray(thetalist_init)
+
+    i = 0
+
+    while i<maxiterates and (linalg.norm(wb)>wthresh or linalg.norm(vb)>vthresh):
+        thetalist_next = thetalist_i.reshape(N,1) + dot(linalg.pinv(BodyJacobian(Slist,thetalist_i)), Vb)
+        jointAngles = vstack((jointAngles, thetalist_next.reshape(1,N)))
+        Vb = MatrixLog6(dot(TransInv(FKinBody(M, Slist, thetalist_next.flatten())), T_sd))
+        thetalist_i = thetalist_next.reshape(N,)
+        wb = Vb[:3, 0]
+        vb = Vb[3:, 0]
+        i += 1
+
+    return jointAngles
+
+
+    
