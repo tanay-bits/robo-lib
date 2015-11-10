@@ -565,7 +565,7 @@ def FKinFixed(M,Slist,thetalist):
     return T_se
 
 
-def FKinBody(M,Slist,thetalist):
+def FKinBody(M,Blist,thetalist):
     '''
     Same as FKinFixed, except here the screw axes are expressed in the end-effector frame.
     Example:
@@ -588,12 +588,12 @@ def FKinBody(M,Slist,thetalist):
     M = asarray(M)
     R_M = TransToRp(M)[0]
     assert M.shape == (4,4), "M not a 4x4 matrix"
-    assert len(Slist[0]) == 6, "Incorrect Screw Axis length"
-    Slist = asarray(Slist).T
+    assert len(Blist[0]) == 6, "Incorrect Screw Axis length"
+    Blist = asarray(Blist).T
 
-    c = dot(M, MatrixExp6(Slist[:,0]*thetalist[0]))
+    c = dot(M, MatrixExp6(Blist[:,0]*thetalist[0]))
     for i in range(len(thetalist)-1):        
-        nex = MatrixExp6(Slist[:,i+1]*thetalist[i+1])
+        nex = MatrixExp6(Blist[:,i+1]*thetalist[i+1])
         c = dot(c, nex)
 
     T_se = c
@@ -601,7 +601,9 @@ def FKinBody(M,Slist,thetalist):
 
 
 ### end of HW2 functions #############################
-### start of HW1 functions ###########################
+
+### start of HW3 functions ###########################
+
 
 def FixedJacobian(Slist,thetalist):
     '''
@@ -637,9 +639,9 @@ def FixedJacobian(Slist,thetalist):
     return J
 
 
-def BodyJacobian(Slist,thetalist):
+def BodyJacobian(Blist,thetalist):
     '''
-    Takes a list of joint angles (thetalist) and a list of screw axes (Slist) expressed in
+    Takes a list of joint angles (thetalist) and a list of screw axes (Blist) expressed in
     end-effector body frame, and returns the body Jacobian (a 6xN matrix, where N is the # joints).
     Example:
     
@@ -658,30 +660,59 @@ def BodyJacobian(Slist,thetalist):
     '''
     N = len(thetalist)
     J = zeros((6,N))
-    Slist = asarray(Slist).T
+    Blist = asarray(Blist).T
 
-    J[:,N-1] = Slist[:,N-1]
+    J[:,N-1] = Blist[:,N-1]
     for k in range(N-1):
-        c = MatrixExp6(-Slist[:,k+1]*thetalist[k+1])
+        c = MatrixExp6(-Blist[:,k+1]*thetalist[k+1])
         for i in range(k+2, len(thetalist)):        
-            nex = MatrixExp6(-Slist[:,i]*thetalist[i])
+            nex = MatrixExp6(-Blist[:,i]*thetalist[i])
             c = dot(nex, c)
-        J[:,k] = dot(Adjoint(c), Slist[:,k])
+        J[:,k] = dot(Adjoint(c), Blist[:,k])
 
     return J
 
 
-def IKinBody(Slist, M, T_sd, thetalist_init, wthresh, vthresh):
+def IKinBody(Blist, M, T_sd, thetalist_init, wthresh, vthresh):
+    '''
+    A numerical inverse kinematics routine based on Newton-Raphson method.
+    Takes a list of screw axes (Blist) expressed in end-effector body frame, the end-effector zero
+    configuration (M), the desired end-effector configuration (T_sd), an initial guess of joint angles
+    (thetalist_init), and small positive scalar thresholds (wthresh, vthresh) controlling how close the
+    final solution thetas must be to the desired thetas.
+    Example:
+
+    wthresh = 0.01
+    vthresh = 0.001
+    M = [[1,0,0,-.817],[0,0,-1,-.191],[0,1,0,-.006],[0,0,0,1]]
+    T_sd = [[0,1,0,-.6],[0,0,-1,.1],[-1,0,0,.1],[0,0,0,1]]
+    thetalist_init = [0]*6
+    B1 = [0,1,0,.191,0,.817]
+    B2 = [0,0,1,.095,-.817,0]
+    B3 = [0,0,1,.095,-.392,0]
+    B4 = [0,0,1,.095,0,0]
+    B5 = [0,-1,0,-.082,0,0]
+    B6 = [0,0,1,0,0,0]
+    Blist = [B1,B2,B3,B4,B5,B6]
+    round(IKinBody(Blist, M, T_sd, thetalist_init, wthresh, vthresh), 3)
+    >>
+    array([[ 0.   ,  0.   ,  0.   ,  0.   ,  0.   ,  0.   ],
+           [-0.356, -0.535,  0.468,  1.393, -0.356, -2.897],
+           [-0.399, -1.005,  1.676, -0.434, -0.1  , -1.801],
+           [-0.516, -1.062,  1.731, -1.63 , -0.502, -0.607],
+           [-0.493, -0.923,  1.508, -0.73 , -0.289, -1.42 ],
+           [-0.472, -0.818,  1.365, -0.455, -0.467, -1.662],
+           [-0.469, -0.834,  1.395, -0.561, -0.467, -1.571]])
+    '''
     T_sd = asarray(T_sd)
     assert T_sd.shape == (4,4), "T_sd not a 4x4 matrix"
     
     maxiterates = 100
-    
     N = len(thetalist_init)
 
     jointAngles = asarray(thetalist_init).reshape(1,N)
 
-    T_sb = FKinBody(M, Slist, thetalist_init)
+    T_sb = FKinBody(M, Blist, thetalist_init)
     Vb = MatrixLog6(dot(TransInv(T_sb), T_sd))
     wb = Vb[:3, 0]
     vb = Vb[3:, 0]
@@ -691,9 +722,9 @@ def IKinBody(Slist, M, T_sd, thetalist_init, wthresh, vthresh):
     i = 0
 
     while i<maxiterates and (linalg.norm(wb)>wthresh or linalg.norm(vb)>vthresh):
-        thetalist_next = thetalist_i.reshape(N,1) + dot(linalg.pinv(BodyJacobian(Slist,thetalist_i)), Vb)
+        thetalist_next = thetalist_i.reshape(N,1) + dot(linalg.pinv(BodyJacobian(Blist,thetalist_i)), Vb)
         jointAngles = vstack((jointAngles, thetalist_next.reshape(1,N)))
-        T_sb = FKinBody(M, Slist, thetalist_next.flatten())
+        T_sb = FKinBody(M, Blist, thetalist_next.flatten())
         Vb = MatrixLog6(dot(TransInv(T_sb), T_sd))
         thetalist_i = thetalist_next.reshape(N,)
         wb = Vb[:3, 0]
@@ -704,6 +735,32 @@ def IKinBody(Slist, M, T_sd, thetalist_init, wthresh, vthresh):
 
 
 def IKinFixed(Slist, M, T_sd, thetalist_init, wthresh, vthresh):
+    '''
+
+    Example:
+    M =  [[1,0,0,0],[0,1,0,0],[0,0,1,0.910],[0,0,0,1]]
+    T_sd = [[1,0,0,.4],[0,1,0,0],[0,0,1,.4],[0,0,0,1]]
+    thetalist_init = [0]*7
+    S1 = [0,0,1,0,0,0]
+    S2 = [0,1,0,0,0,0]
+    S3 = [0,0,1,0,0,0]
+    S4 = [0,1,0,-0.55,0,0.045]
+    S5 = [0,0,1,0,0,0]
+    S6 = [0,1,0,-0.85,0,0]
+    S7 = [0,0,1,0,0,0]
+    Slist = [S1,S2,S3,S4,S5,S6,S7]
+    round(IKinFixed(Slist, M, T_sd, thetas, wthresh, vthresh), 3)
+    >> 
+    array([[  0.   ,   0.   ,   0.   ,   0.   ,   0.   ,   0.   ,   0.   ],
+           [  0.   ,   4.471,  -0.   , -11.333,  -0.   ,   6.863,  -0.   ],
+           [ -0.   ,   3.153,  -0.   ,  -5.462,  -0.   ,   2.309,   0.   ],
+           [ -0.   ,  -1.006,   0.   ,   5.679,  -0.   ,  -4.673,   0.   ],
+           [ -0.   ,   1.757,   0.   ,  -0.953,   0.   ,  -0.804,  -0.   ],
+           [ -0.   ,   1.754,   0.   ,  -2.27 ,  -0.   ,   0.516,  -0.   ],
+           [  0.   ,   1.27 ,   0.   ,  -1.85 ,  -0.   ,   0.58 ,  -0.   ],
+           [  0.   ,   1.367,   0.   ,  -1.719,  -0.   ,   0.351,  -0.   ],
+           [  0.   ,   1.354,   0.   ,  -1.71 ,  -0.   ,   0.356,  -0.   ]])
+    '''
     T_sd = asarray(T_sd)
     assert T_sd.shape == (4,4), "T_sd not a 4x4 matrix"
     
@@ -735,3 +792,6 @@ def IKinFixed(Slist, M, T_sd, thetalist_init, wthresh, vthresh):
         i += 1
 
     return jointAngles
+
+
+### end of HW3 functions #############################

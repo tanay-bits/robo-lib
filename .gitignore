@@ -3,3 +3,6 @@
 *~
 *.pyc
 *.yaml
+*.pdf
+*.png
+*.jpg
