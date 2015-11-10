@@ -570,16 +570,16 @@ def FKinBody(M,Slist,thetalist):
     Same as FKinFixed, except here the screw axes are expressed in the end-effector frame.
     Example:
 
-    S1b = [0,0,-1,2,0,0]
-    S2b = [0,0,0,0,1,0]
-    S3b = [0,0,1,0,0,0.1]
-    Sblist = [S1b, S2b, S3b]
+    B1 = [0,0,-1,2,0,0]
+    B2 = [0,0,0,0,1,0]
+    B3 = [0,0,1,0,0,0.1]
+    Blist = [S1b, S2b, S3b]
     thetalist = [math.pi/2, 3, math.pi]
     M = [[-1,  0,  0,  0],
          [ 0,  1,  0,  6],
          [ 0,  0, -1,  2],
          [ 0,  0,  0,  1]]
-    FKinBody(M,Sblist,thetalist)
+    FKinBody(M,Blist,thetalist)
     >> array([[ -1.14423775e-17,   1.00000000e+00,   0.00000000e+00, -5.00000000e+00],
               [  1.00000000e+00,   1.14423775e-17,   0.00000000e+00, 4.00000000e+00],
               [  0.00000000e+00,   0.00000000e+00,  -1.00000000e+00, 1.68584073e+00],
@@ -629,8 +629,8 @@ def FixedJacobian(Slist,thetalist):
     J[:,0] = Slist[:,0]
     for k in range(1,N):
         c = MatrixExp6(Slist[:,0]*thetalist[0])
-        for i in range(1,len(thetalist)-1):        
-            nex = MatrixExp6(Slist[:,i]*thetalist[i])
+        for i in range(k-1):        
+            nex = MatrixExp6(Slist[:,i+1]*thetalist[i+1])
             c = dot(c, nex)
         J[:,k] = dot(Adjoint(c), Slist[:,k])
 
@@ -643,12 +643,12 @@ def BodyJacobian(Slist,thetalist):
     end-effector body frame, and returns the body Jacobian (a 6xN matrix, where N is the # joints).
     Example:
     
-    S1b = [0,0,-1,2,0,0]
-    S2b = [0,0,0,0,1,0]
-    S3b = [0,0,1,0,0,0.1]
-    Sblist = [S1b, S2b, S3b]
+    B1 = [0,0,-1,2,0,0]
+    B2 = [0,0,0,0,1,0]
+    B3 = [0,0,1,0,0,0.1]
+    Blist = [B1, B2, B3]
     thetalist = [math.pi/2, 3, math.pi]
-    BodyJacobian(Sblist,thetalist)
+    BodyJacobian(Blist,thetalist)
     >> array([[  0.00000000e+00,   0.00000000e+00,   0.00000000e+00],
               [  0.00000000e+00,   0.00000000e+00,   0.00000000e+00],
               [ -1.00000000e+00,   0.00000000e+00,   1.00000000e+00],
@@ -681,7 +681,8 @@ def IKinBody(Slist, M, T_sd, thetalist_init, wthresh, vthresh):
 
     jointAngles = asarray(thetalist_init).reshape(1,N)
 
-    Vb = MatrixLog6(dot(TransInv(FKinBody(M, Slist, thetalist_init)), T_sd))
+    T_sb = FKinBody(M, Slist, thetalist_init)
+    Vb = MatrixLog6(dot(TransInv(T_sb), T_sd))
     wb = Vb[:3, 0]
     vb = Vb[3:, 0]
 
@@ -692,7 +693,8 @@ def IKinBody(Slist, M, T_sd, thetalist_init, wthresh, vthresh):
     while i<maxiterates and (linalg.norm(wb)>wthresh or linalg.norm(vb)>vthresh):
         thetalist_next = thetalist_i.reshape(N,1) + dot(linalg.pinv(BodyJacobian(Slist,thetalist_i)), Vb)
         jointAngles = vstack((jointAngles, thetalist_next.reshape(1,N)))
-        Vb = MatrixLog6(dot(TransInv(FKinBody(M, Slist, thetalist_next.flatten())), T_sd))
+        T_sb = FKinBody(M, Slist, thetalist_next.flatten())
+        Vb = MatrixLog6(dot(TransInv(T_sb), T_sd))
         thetalist_i = thetalist_next.reshape(N,)
         wb = Vb[:3, 0]
         vb = Vb[3:, 0]
@@ -701,4 +703,35 @@ def IKinBody(Slist, M, T_sd, thetalist_init, wthresh, vthresh):
     return jointAngles
 
 
+def IKinFixed(Slist, M, T_sd, thetalist_init, wthresh, vthresh):
+    T_sd = asarray(T_sd)
+    assert T_sd.shape == (4,4), "T_sd not a 4x4 matrix"
     
+    maxiterates = 100
+    
+    N = len(thetalist_init)
+
+    jointAngles = asarray(thetalist_init).reshape(1,N)
+
+    T_sb = FKinFixed(M, Slist, thetalist_init)
+    Vb = MatrixLog6(dot(TransInv(T_sb), T_sd))
+    wb = Vb[:3, 0]
+    vb = Vb[3:, 0]
+
+    thetalist_i = asarray(thetalist_init)
+
+    i = 0
+
+    while i<maxiterates and (linalg.norm(wb)>wthresh or linalg.norm(vb)>vthresh):
+        Jb = dot(Adjoint(TransInv(T_sb)), FixedJacobian(Slist,thetalist_i))
+        thetalist_next = thetalist_i.reshape(N,1) + dot(linalg.pinv(Jb), Vb)
+        jointAngles = vstack((jointAngles, thetalist_next.reshape(1,N)))
+        
+        T_sb = FKinFixed(M, Slist, thetalist_next.flatten())
+        Vb = MatrixLog6(dot(TransInv(T_sb), T_sd))
+        thetalist_i = thetalist_next.reshape(N,)
+        wb = Vb[:3, 0]
+        vb = Vb[3:, 0]
+        i += 1
+
+    return jointAngles
