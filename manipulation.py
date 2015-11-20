@@ -257,6 +257,8 @@ def TransToRp(T):
     R = T[:3,:3]
     assert is_rot_matrix(R), "Input not a valid transformation matrix"
 
+    assert allclose([0,0,0,1],T[-1],atol=1e-03), "Last row of homogenous T matrix should be [0,0,0,1]"
+
     p = T[:3,-1]
     p.shape = (3,1)
 
@@ -624,10 +626,6 @@ def FixedJacobian(Slist,thetalist):
               [  0.00000000e+00,   1.11022302e-16,  -5.00000000e+00],
               [  0.00000000e+00,   0.00000000e+00,  -1.00000000e-01]])
         '''
-    for i in range(len(Slist)):
-        assert len(Slist[i]) == 6, "Incorrect screw axis length"
-    assert len(thetalist) == len(Slist), "# of joint angles not equal to # of screw axes"
-    
     N = len(thetalist)
     J = zeros((6,N))
     Slist = asarray(Slist).T
@@ -662,10 +660,6 @@ def BodyJacobian(Blist,thetalist):
               [ -6.12323400e-16,  -1.00000000e+00,   0.00000000e+00],
               [  0.00000000e+00,   0.00000000e+00,   1.00000000e-01]])
     '''
-    for i in range(len(Blist)):
-        assert len(Blist[i]) == 6, "Incorrect screw axis length"
-    assert len(thetalist) == len(Blist), "# of joint angles not equal to # of screw axes"
-
     N = len(thetalist)
     J = zeros((6,N))
     Blist = asarray(Blist).T
@@ -712,14 +706,8 @@ def IKinBody(Blist, M, T_sd, thetalist_init, wthresh, vthresh):
            [-0.472, -0.818,  1.365, -0.455, -0.467, -1.662],
            [-0.469, -0.834,  1.395, -0.561, -0.467, -1.571]])
     '''
-    for i in range(len(Blist)):
-        assert len(Blist[i]) == 6, "Incorrect screw axis length"
-    assert len(thetalist_init) == len(Blist), "# of joint angles not equal to # of screw axes"
-    # check if M and T_sd are valid SE(3) elements:
-    R_M = TransToRp(M)[0]
-    R_T_sd = TransToRp(T_sd)[0]
-
     T_sd = asarray(T_sd)
+    assert T_sd.shape == (4,4), "T_sd not a 4x4 matrix"
     
     maxiterates = 100
     N = len(thetalist_init)
@@ -750,12 +738,6 @@ def IKinBody(Blist, M, T_sd, thetalist_init, wthresh, vthresh):
 
 def IKinFixed(Slist, M, T_sd, thetalist_init, wthresh, vthresh):
     '''
-    Similar to IKinBody, except Slist (list of screw axes expressed in space frame) is passed as
-    argument instead of Blist. Derivation of algorithm:
-    The same algorithm used in IKinBody is used here, except
-    -> FKinFixed is used instead of FKinBody to get T_sb, since Slist is provided instead of Blist.
-    -> Since BodyJacobian Jb cannot be used with Slist, FixedJacobian Js is calculated first and
-       then Jb is determined from the relationship Jb = Adjoint(T_bs).Js 
 
     Example:
     M =  [[1,0,0,0],[0,1,0,0],[0,0,1,0.910],[0,0,0,1]]
@@ -781,14 +763,8 @@ def IKinFixed(Slist, M, T_sd, thetalist_init, wthresh, vthresh):
            [  0.   ,   1.367,   0.   ,  -1.719,  -0.   ,   0.351,  -0.   ],
            [  0.   ,   1.354,   0.   ,  -1.71 ,  -0.   ,   0.356,  -0.   ]])
     '''
-    for i in range(len(Slist)):
-        assert len(Slist[i]) == 6, "Incorrect screw axis length"
-    assert len(thetalist_init) == len(Slist), "# of joint angles not equal to # of screw axes"
-    # check if M and T_sd are valid SE(3) elements:
-    R_M = TransToRp(M)[0]
-    R_T_sd = TransToRp(T_sd)[0]
-
     T_sd = asarray(T_sd)
+    assert T_sd.shape == (4,4), "T_sd not a 4x4 matrix"
     
     maxiterates = 100
     
@@ -821,3 +797,99 @@ def IKinFixed(Slist, M, T_sd, thetalist_init, wthresh, vthresh):
 
 
 ### end of HW3 functions #############################
+
+### start of HW4 functions ###########################
+
+def CubicTimeScaling(T,t):
+    assert t >= 0 and t <= T, 'Invalid t'
+
+    s = (3/T**2)*t**2 + (-2/T**3)*t**3
+    return s 
+
+
+def QuinticTimeScaling(T,t):
+    assert t >= 0 and t <= T, 'Invalid t'
+
+    s = (10/T**3)*t**3 + (-15/T**4)*t**4 + (6/T**5)*t**5
+    return s
+
+
+def JointTrajectory(thetas_start, thetas_end, T, N, method='cubic'):
+    assert len(thetas_start) == len(thetas_end), 'Incompatible thetas'
+    assert N >= 2, 'N must be >= 2'
+    assert isinstance(N, int), 'N must be an integer'
+    assert method == 'cubic' or method == 'quintic', 'Incorrect time-scaling method argument'
+
+    trajectory = asarray(thetas_start)
+
+    if method == 'cubic':
+        for i in range(1,N):
+            t = i*T/(N-1)
+            s = CubicTimeScaling(T,t)
+            thetas_s = asarray(thetas_start)*(1-s) + asarray(thetas_end)*s
+            trajectory = vstack((trajectory, thetas_s))
+        return trajectory
+
+    elif method == 'quintic':
+        for i in range(1,N):
+            t = i*T/(N-1)
+            s = QuinticTimeScaling(T,t)
+            thetas_s = asarray(thetas_start)*(1-s) + asarray(thetas_end)*s
+            trajectory = vstack((trajectory, thetas_s))
+        return trajectory
+
+
+def ScrewTrajectory(X_start, X_end, T, N, method='cubic'):
+    R_start, p_start = TransToRp(X_start)
+    R_end ,p_end = TransToRp(X_end)
+    assert N >= 2, 'N must be >= 2'
+    assert isinstance(N, int), 'N must be an integer'
+    assert method == 'cubic' or method == 'quintic', 'Incorrect time-scaling method argument'
+
+    trajectory = X_start
+
+    if method == 'cubic':
+        for i in range(1,N):
+            t = i*T/(N-1)
+            s = CubicTimeScaling(T,t)
+            X_s = X_start.dot(MatrixExp6(MatrixLog6(TransInv(X_start).dot(X_end))*s))
+            trajectory = vstack((trajectory, X_s))
+        return trajectory
+
+    elif method == 'quintic':
+        for i in range(1,N):
+            t = i*T/(N-1)
+            s = QuinticTimeScaling(T,t)
+            X_s = X_start.dot(MatrixExp6(MatrixLog6(TransInv(X_start).dot(X_end))*s))
+            trajectory = vstack((trajectory, X_s))
+        return trajectory
+
+
+def CartesianTrajectory(X_start, X_end, T, N, method='cubic'):
+    R_start, p_start = TransToRp(X_start)
+    R_end ,p_end = TransToRp(X_end)
+    assert N >= 2, 'N must be >= 2'
+    assert isinstance(N, int), 'N must be an integer'
+    assert method == 'cubic' or method == 'quintic', 'Incorrect time-scaling method argument'
+
+    trajectory = X_start
+
+    if method == 'cubic':
+        for i in range(1,N):
+            t = i*T/(N-1)
+            s = CubicTimeScaling(T,t)
+            p_s = (1-s)*p_start + s*p_end
+            R_s = R_start.dot(MatrixExp3(MatrixLog3(RotInv(R_start).dot(R_end))*s))
+            X_s = RpToTrans(R_s, p_s)
+            trajectory = vstack((trajectory, X_s))
+        return trajectory
+
+    elif method == 'quintic':
+        for i in range(1,N):
+            t = i*T/(N-1)
+            s = QuinticTimeScaling(T,t)
+            p_s = (1-s)*p_start + s*p_end
+            R_s = R_start.dot(MatrixExp3(MatrixLog3(RotInv(R_start).dot(R_end))*s))
+            X_s = RpToTrans(R_s, p_s)
+            trajectory = vstack((trajectory, X_s))
+        return trajectory
