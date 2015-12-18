@@ -725,6 +725,7 @@ def IKinBody(Blist, M, T_sd, thetalist_init, wthresh, vthresh):
 
     while i<maxiterates and (linalg.norm(wb)>wthresh or linalg.norm(vb)>vthresh):
         thetalist_next = thetalist_i.reshape(N,1) + dot(linalg.pinv(BodyJacobian(Blist,thetalist_i)), Vb)
+        # thetalist_next = (thetalist_next + pi)%(2*pi) - pi
         jointAngles = vstack((jointAngles, thetalist_next.reshape(1,N)))
         T_sb = FKinBody(M, Blist, thetalist_next.flatten())
         Vb = MatrixLog6(dot(TransInv(T_sb), T_sd))
@@ -738,8 +739,9 @@ def IKinBody(Blist, M, T_sd, thetalist_init, wthresh, vthresh):
 
 def IKinFixed(Slist, M, T_sd, thetalist_init, wthresh, vthresh):
     '''
-
+    Similar to IKinBody, except the screw axes are in the fixed space frame.
     Example:
+    
     M =  [[1,0,0,0],[0,1,0,0],[0,0,1,0.910],[0,0,0,1]]
     T_sd = [[1,0,0,.4],[0,1,0,0],[0,0,1,.4],[0,0,0,1]]
     thetalist_init = [0]*7
@@ -800,21 +802,59 @@ def IKinFixed(Slist, M, T_sd, thetalist_init, wthresh, vthresh):
 
 ### start of HW4 functions ###########################
 
+
 def CubicTimeScaling(T,t):
+    '''
+    Takes a total travel time T and the current time t satisfying 0 <= t <= T and returns
+    the path parameter s corresponding to a motion that begins and ends at zero velocity.
+    Example:
+
+    CubicTimeScaling(10, 7)
+    >> 0.78399
+    '''
     assert t >= 0 and t <= T, 'Invalid t'
 
-    s = (3/T**2)*t**2 + (-2/T**3)*t**3
+    s = (3./(T**2))*(t**2) - (2./(T**3))*(t**3)
     return s 
 
 
 def QuinticTimeScaling(T,t):
+    '''
+    Takes a total travel time T and the current time t satisfying 0 <= t <= T and returns
+    the path parameter s corresponding to a motion that begins and ends at zero velocity
+    and zero acceleration.
+    Example:
+
+    QuinticTimeScaling(10,7)
+    >> 0.83692
+    '''
     assert t >= 0 and t <= T, 'Invalid t'
 
-    s = (10/T**3)*t**3 + (-15/T**4)*t**4 + (6/T**5)*t**5
+    s = (10./(T**3))*(t**3) + (-15./(T**4))*(t**4) + (6./(T**5))*(t**5)
     return s
 
 
 def JointTrajectory(thetas_start, thetas_end, T, N, method='cubic'):
+    '''
+    Takes initial joint positions (n-dim) thetas_start, final joint positions thetas_end, the time of
+    the motion T in seconds, the number of points N >= 2 in the discrete representation of the trajectory,
+    and the time-scaling method (cubic or quintic) and returns a trajectory as a matrix with N rows,
+    where each row is an n-vector of joint positions at an instant in time. The trajectory is a straight-line
+    motion in joint space.
+    Example:
+
+    thetas_start = [0.1]*6
+    thetas_end = [pi/2]*6
+    T = 2
+    N = 5
+    JointTrajectory(thetas_start, thetas_end, T, N, 'cubic')
+    >>
+    array([[ 0.1  ,  0.1  ,  0.1  ,  0.1  ,  0.1  ,  0.1  ],
+           [ 0.33 ,  0.33 ,  0.33 ,  0.33 ,  0.33 ,  0.33 ],
+           [ 0.835,  0.835,  0.835,  0.835,  0.835,  0.835],
+           [ 1.341,  1.341,  1.341,  1.341,  1.341,  1.341],
+           [ 1.571,  1.571,  1.571,  1.571,  1.571,  1.571]])
+    '''
     assert len(thetas_start) == len(thetas_end), 'Incompatible thetas'
     assert N >= 2, 'N must be >= 2'
     assert isinstance(N, int), 'N must be an integer'
@@ -824,7 +864,7 @@ def JointTrajectory(thetas_start, thetas_end, T, N, method='cubic'):
 
     if method == 'cubic':
         for i in range(1,N):
-            t = i*T/(N-1)
+            t = i*float(T)/(N-1)
             s = CubicTimeScaling(T,t)
             thetas_s = asarray(thetas_start)*(1-s) + asarray(thetas_end)*s
             trajectory = vstack((trajectory, thetas_s))
@@ -832,7 +872,7 @@ def JointTrajectory(thetas_start, thetas_end, T, N, method='cubic'):
 
     elif method == 'quintic':
         for i in range(1,N):
-            t = i*T/(N-1)
+            t = i*float(T)/(N-1)
             s = QuinticTimeScaling(T,t)
             thetas_s = asarray(thetas_start)*(1-s) + asarray(thetas_end)*s
             trajectory = vstack((trajectory, thetas_s))
@@ -840,8 +880,44 @@ def JointTrajectory(thetas_start, thetas_end, T, N, method='cubic'):
 
 
 def ScrewTrajectory(X_start, X_end, T, N, method='cubic'):
-    R_start, p_start = TransToRp(X_start)
-    R_end ,p_end = TransToRp(X_end)
+    '''
+    Similar to JointTrajectory, except that it takes the initial end-effector configuration X_start in SE(3),
+    the final configuration X_end, and returns the trajectory as a 4N x 4 matrix in which every 4 rows is an
+    element of SE(3) separated in time by T/(N-1). This represents a discretized trajectory of the screw motion
+    from X_start to X_end.
+    Example:
+
+    thetas_start = [0.1]*6
+    thetas_end = [pi/2]*6
+    M_ur5 = [[1,0,0,-.817],[0,0,-1,-.191],[0,1,0,-.006],[0,0,0,1]]
+    S1_ur5 = [0,0,1,0,0,0]
+    S2_ur5 = [0,-1,0,.089,0,0]
+    S3_ur5 = [0,-1,0,.089,0,.425]
+    S4_ur5 = [0,-1,0,.089,0,.817]
+    S5_ur5 = [0,0,-1,.109,-.817,0]
+    S6_ur5 = [0,-1,0,-.006,0,.817]
+    Slist_ur5 = [S1_ur5,S2_ur5,S3_ur5,S4_ur5,S5_ur5,S6_ur5]
+    X_start = FKinFixed(M_ur5, Slist_ur5, thetas_start)
+    X_end = FKinFixed(M_ur5, Slist_ur5, thetas_end)
+    T = 2
+    N = 3
+    ScrewTrajectory(X_start, X_end, T, N, 'quintic')
+    >>
+    array([[ 0.922, -0.388,  0.004, -0.764],
+           [-0.007, -0.029, -1.   , -0.268],
+           [ 0.388,  0.921, -0.03 , -0.124],
+           [ 0.   ,  0.   ,  0.   ,  1.   ],
+           [ 0.534, -0.806,  0.253, -0.275],
+           [ 0.681,  0.234, -0.694, -0.067],
+           [ 0.5  ,  0.543,  0.674, -0.192],
+           [ 0.   ,  0.   ,  0.   ,  1.   ],
+           [ 0.   , -1.   , -0.   ,  0.109],
+           [ 1.   ,  0.   ,  0.   ,  0.297],
+           [-0.   , -0.   ,  1.   , -0.254],
+           [ 0.   ,  0.   ,  0.   ,  1.   ]])
+    '''
+    R_start, p_start = TransToRp(X_start) #Just to ensure X_start is valid
+    R_end ,p_end = TransToRp(X_end)       #Just to ensure X_end is valid
     assert N >= 2, 'N must be >= 2'
     assert isinstance(N, int), 'N must be an integer'
     assert method == 'cubic' or method == 'quintic', 'Incorrect time-scaling method argument'
@@ -850,7 +926,7 @@ def ScrewTrajectory(X_start, X_end, T, N, method='cubic'):
 
     if method == 'cubic':
         for i in range(1,N):
-            t = i*T/(N-1)
+            t = i*float(T)/(N-1)
             s = CubicTimeScaling(T,t)
             X_s = X_start.dot(MatrixExp6(MatrixLog6(TransInv(X_start).dot(X_end))*s))
             trajectory = vstack((trajectory, X_s))
@@ -858,7 +934,7 @@ def ScrewTrajectory(X_start, X_end, T, N, method='cubic'):
 
     elif method == 'quintic':
         for i in range(1,N):
-            t = i*T/(N-1)
+            t = i*float(T)/(N-1)
             s = QuinticTimeScaling(T,t)
             X_s = X_start.dot(MatrixExp6(MatrixLog6(TransInv(X_start).dot(X_end))*s))
             trajectory = vstack((trajectory, X_s))
@@ -866,6 +942,43 @@ def ScrewTrajectory(X_start, X_end, T, N, method='cubic'):
 
 
 def CartesianTrajectory(X_start, X_end, T, N, method='cubic'):
+    '''
+    Similar to ScrewTrajectory, except the origin of the end-effector frame follows a straight line,
+    decoupled from the rotational motion.
+    Example:
+
+    thetas_start = [0.1]*6
+    thetas_end = [pi/2]*6
+    M_ur5 = [[1,0,0,-.817],[0,0,-1,-.191],[0,1,0,-.006],[0,0,0,1]]
+    S1_ur5 = [0,0,1,0,0,0]
+    S2_ur5 = [0,-1,0,.089,0,0]
+    S3_ur5 = [0,-1,0,.089,0,.425]
+    S4_ur5 = [0,-1,0,.089,0,.817]
+    S5_ur5 = [0,0,-1,.109,-.817,0]
+    S6_ur5 = [0,-1,0,-.006,0,.817]
+    Slist_ur5 = [S1_ur5,S2_ur5,S3_ur5,S4_ur5,S5_ur5,S6_ur5]
+    X_start = FKinFixed(M_ur5, Slist_ur5, thetas_start)
+    X_end = FKinFixed(M_ur5, Slist_ur5, thetas_end)
+    T = 2
+    N = 3
+    CartesianTrajectory(X_start, X_end, T, N, 'quintic')
+    >>
+    array([[ 0.922, -0.388,  0.004, -0.764],
+           [-0.007, -0.029, -1.   , -0.268],
+           [ 0.388,  0.921, -0.03 , -0.124],
+           [ 0.   ,  0.   ,  0.   ,  1.   ],
+           [ 0.534, -0.806,  0.253, -0.327],
+           [ 0.681,  0.234, -0.694,  0.014],
+           [ 0.5  ,  0.543,  0.674, -0.189],
+           [ 0.   ,  0.   ,  0.   ,  1.   ],
+           [ 0.   , -1.   , -0.   ,  0.109],
+           [ 1.   ,  0.   ,  0.   ,  0.297],
+           [-0.   , -0.   ,  1.   , -0.254],
+           [ 0.   ,  0.   ,  0.   ,  1.   ]])
+
+    Notice the R of every T is same for ScrewTrajectory and CartesianTrajectory, but the translations
+    are different. 
+    '''
     R_start, p_start = TransToRp(X_start)
     R_end ,p_end = TransToRp(X_end)
     assert N >= 2, 'N must be >= 2'
@@ -876,7 +989,7 @@ def CartesianTrajectory(X_start, X_end, T, N, method='cubic'):
 
     if method == 'cubic':
         for i in range(1,N):
-            t = i*T/(N-1)
+            t = i*float(T)/(N-1)
             s = CubicTimeScaling(T,t)
             p_s = (1-s)*p_start + s*p_end
             R_s = R_start.dot(MatrixExp3(MatrixLog3(RotInv(R_start).dot(R_end))*s))
@@ -886,10 +999,214 @@ def CartesianTrajectory(X_start, X_end, T, N, method='cubic'):
 
     elif method == 'quintic':
         for i in range(1,N):
-            t = i*T/(N-1)
+            t = i*float(T)/(N-1)
             s = QuinticTimeScaling(T,t)
             p_s = (1-s)*p_start + s*p_end
             R_s = R_start.dot(MatrixExp3(MatrixLog3(RotInv(R_start).dot(R_end))*s))
             X_s = RpToTrans(R_s, p_s)
             trajectory = vstack((trajectory, X_s))
         return trajectory
+
+
+### end of HW4 functions #############################
+
+### start of HW5 functions ###########################
+
+
+def LieBracket(V1, V2):
+    assert len(V1)==len(V2)==6, 'Needs two 6 vectors'
+    V1.shape = (6,1)
+    w1 = V1[:3,:]
+    v1 = V1[3:,:]
+
+    w1_mat = VecToso3(w1)
+    v1_mat = VecToso3(v1)
+    col1 = vstack((w1_mat, v1_mat))
+    col2 = vstack((zeros((3,3)), w1_mat))
+    mat1 = hstack((col1, col2))
+
+    return mat1.dot(V2)
+
+
+def TruthBracket(V1, V2):       # Transposed version of Lie Bracket
+    assert len(V1)==len(V2)==6, 'Needs two 6 vectors'
+    V1.shape = (6,1)
+    w1 = V1[:3,:]
+    v1 = V1[3:,:]
+
+    w1_mat = VecToso3(w1)
+    v1_mat = VecToso3(v1)
+    col1 = vstack((w1_mat, v1_mat))
+    col2 = vstack((zeros((3,3)), w1_mat))
+    mat1 = hstack((col1, col2))
+
+    return (mat1.T).dot(V2)
+
+
+def InverseDynamics(thetas, thetadots, thetadotdots, g, Ftip, M_rels, Glist, Slist):
+    '''
+    M1 = array(([1.,0.,0.,0.],[0.,1.,0.,0.],[0.,0.,1.,0.],[0.,0.,.089159,1.])).T
+    M2 = array(([0.,0.,-1.,0.],[0.,1.,0.,0.],[1.,0.,0.,0.],[.28,.13585,.089159,1.])).T
+    M3 = array(([0.,0.,-1.,0.],[0.,1.,0.,0.],[1.,0.,0.,0.],[.675,.01615,.089159,1.])).T
+    M4 = array(([-1.,0.,0.,0.],[0.,1.,0.,0.],[0.,0.,-1.,0.],[.81725,.01615,.089159,1.])).T
+    M5 = array(([-1.,0.,0.,0.],[0.,1.,0.,0.],[0.,0.,-1.,0.],[.81725,.10915,.089159,1.])).T
+    M6 = array(([-1.,0.,0.,0.],[0.,1.,0.,0.],[0.,0.,-1.,0.],[.81725,.10915,-.005491,1.])).T
+    M01 = array(([1.,0.,0.,0.],[0.,1.,0.,0.],[0.,0.,1.,0.],[0.,0.,.089159,1.])).T
+    M12 = array(([0.,0.,-1.,0.],[0.,1.,0.,0.],[1.,0.,0.,0.],[.28,.13585,0.,1.])).T
+    M23 = array(([1.,0.,0.,0.],[0.,1.,0.,0.],[0.,0.,1.,0.],[0.,-.1197,.395,1])).T
+    M34 = array(([0.,0.,-1.,0.],[0.,1.,0.,0.],[1.,0.,0.,0.],[0.,0.,.14225,1.])).T
+    M45 = array(([1.,0.,0.,0.],[0.,1.,0.,0.],[0.,0.,1.,0.],[0.,.093,0.,1.])).T
+    M56 = array(([1.,0.,0.,0.],[0.,1.,0.,0.],[0.,0.,1.,0.],[0.,0.,.09465,1.])).T
+
+    G1 = array(([.010267,0.,0.,0.,0.,0.],[0.,.010267,0.,0.,0.,0.],[0.,0.,.00666,0.,0.,0.],[0.,0.,0.,3.7,0.,0.],[0.,0.,0.,0.,3.7,0.],[0.,0.,0.,0.,0.,3.7]))
+    G2 = array(([.22689,0.,0.,0.,0.,0.],[0.,.22689,0.,0.,0.,0.],[0.,0.,.0151074,0.,0.,0.],[0.,0.,0.,8.393,0.,0.],[0.,0.,0.,0.,8.393,0.],[0.,0.,0.,0.,0.,8.393]))
+    G3 = array(([.0494433,0.,0.,0.,0.,0.],[0.,.0494433,0.,0.,0.,0.],[0.,0.,.004095,0.,0.,0.],[0.,0.,0.,2.275,0.,0.],[0.,0.,0.,0.,2.275,0.],[0.,0.,0.,0.,0.,2.275]))
+    G4 = array(([.111172,0.,0.,0.,0.,0.],[0.,.111172,0.,0.,0.,0.],[0.,0.,.21942,0.,0.,0.],[0.,0.,0.,1.219,0.,0.],[0.,0.,0.,0.,1.219,0.],[0.,0.,0.,0.,0.,1.219]))
+    G5 = array(([.111172,0.,0.,0.,0.,0.],[0.,.111172,0.,0.,0.,0.],[0.,0.,.21942,0.,0.,0.],[0.,0.,0.,1.219,0.,0.],[0.,0.,0.,0.,1.219,0.],[0.,0.,0.,0.,0.,1.219]))
+    G6 = array(([.0171364,0.,0.,0.,0.,0.],[0.,.0171364,0.,0.,0.,0.],[0.,0.,.033822,.0,0.,0.],[0.,0.,0.,.1879,0.,0.],[0.,0.,0.,0.,.1879,0.],[0.,0.,0.,0.,0.,.1879]))
+
+    Slist = [[0.,0.,1.,0.,0.,0.],[0.,1.,0.,-.089,0.,0.],[0.,1.,0.,-.089,0.,.425],[0.,1.,0.,-.089,0.,.817],[0.,0.,-1.,-.109,.817,.0],[0.,1.,0.,.006,0.,.817]]
+
+    Glist = [G1,G2,G3,G4,G5,G6]
+    M_rels = [M01,M12,M23,M34,M45,M56]
+    Ftip = [0.,0.,0.,0.,0.,0.]
+    '''
+    assert len(thetas) == len(thetadots) == len(thetadotdots), 'Joint inputs mismatch'
+    Slist = asarray(Slist)
+    N = len(thetas) # no. of links
+    Ftip = asarray(Ftip)
+
+    # initialize iterables
+    Mlist = [0]*N
+    T_rels = [0]*N
+    Vlist = [0]*N
+    Vdotlist = [0]*N
+    Alist = [0]*N
+    Flist = [0]*N
+    Taulist = [0]*N
+
+    
+    Mlist[0] = M_rels[0]
+    for i in range(1, N):
+        Mlist[i] = Mlist[i-1].dot(M_rels[i])
+
+
+    for i in range(N):
+        Alist[i] = Adjoint(TransInv(Mlist[i])).dot(Slist[i])
+
+
+    for i in range(N):
+        T_rels[i] = M_rels[i].dot(MatrixExp6(Alist[i]*thetas[i]))
+
+
+    V0 = zeros((6,1))
+    Vlist[0] = V0
+
+    Vdot0 = -asarray([0,0,0]+g)
+    Vdotlist[0] = Vdot0
+
+    F_ip1 = asarray(Ftip).reshape(6,1)
+
+    # forward iterations
+    for i in range(1, N):
+        # print i
+        T_i_im1 = TransInv(T_rels[i]) #### should it be i-1???
+
+        Vlist[i] = Adjoint(T_i_im1).dot(Vlist[i-1]) + (Alist[i]*thetadots[i]).reshape(6,1)
+
+        Vdotlist[i] = Adjoint(T_i_im1).dot(Vdotlist[i-1]) + LieBracket(Vlist[i], Alist[i])*thetadots[i] + Alist[i]*thetadotdots[i]
+
+
+    # print T_rels
+    # print Vlist
+    # print Vdotlist
+    # print Alist
+
+    # backward iterations
+    for i in range(N-1,-1,-1):
+        T_ip1_i = TransInv(T_rels[i])
+        Flist[i] = (Adjoint(T_ip1_i).T).dot(F_ip1) + (Glist[i].dot(Vdotlist[i])).reshape(6,1) - TruthBracket(Vlist[i], Glist[i].dot(Vlist[i]))
+        Taulist[i] = (Flist[i].T).dot(Alist[i])
+
+    return asarray(Taulist).flatten()
+
+
+def InertiaMatrix(thetas, M_rels, Glist, Slist):
+    Slist = asarray(Slist)
+    N = len(thetas) # no. of links
+
+    M = zeros((N,N))
+
+    for i in range(N):
+        thetadotdots = [0]*N
+        thetadotdots[i] = 1
+        M[:, i] = InverseDynamics(thetas, [0]*6, thetadotdots, [0]*3, [0]*6, M_rels, Glist, Slist)
+
+    return M
+
+
+def CoriolisForces(thetas, thetadots, M_rels, Glist, Slist):
+    C = InverseDynamics(thetas, thetadots, [0]*6, [0]*3, [0]*6, M_rels, Glist, Slist)
+    return C
+
+
+def GravityForces(thetas, g, M_rels, Glist, Slist):
+    Gvec = InverseDynamics(thetas, [0]*6, [0]*6, g, [0]*6, M_rels, Glist, Slist)
+    return Gvec
+
+
+def EndEffectorForces(Ftip, thetas, M_rels, Glist, Slist):
+    return InverseDynamics(thetas, [0]*6, [0]*6, [0]*3, Ftip, M_rels, Glist, Slist)
+
+
+def ForwardDynamics(thetas, thetadots, taus, g, Ftip, M_rels, Glist, Slist):
+    M = InertiaMatrix(thetas, M_rels, Glist, Slist)
+    C = CoriolisForces(thetas, thetadots, M_rels, Glist, Slist)
+    Gvec = GravityForces(thetas, g, M_rels, Glist, Slist)
+    eeF = EndEffectorForces(Ftip, thetas, M_rels, Glist, Slist)
+
+    thetadotdots = (linalg.pinv(M)).dot(taus - C - Gvec - eeF)
+    return thetadotdots
+
+
+def EulerStep(thetas_t, thetadots_t, thetadotdots_t, delt):
+    thetas_t = asarray(thetas_t)
+    thetadots_t = asarray(thetadots_t)
+    thetadotdots_t = asarray(thetadotdots_t)
+
+    thetas_next = thetas_t + delt*thetadots_t
+    thetadots_next = thetadots_t + delt*thetadotdots_t
+
+    return thetas_next, thetadots_next
+
+
+def InverseDynamicsTrajectory(thetas_traj, thetadots_traj, thetadotdots_traj, Ftip_traj, g, M_rels, Glist, Slist):
+    Np1 = len(thetas_traj)
+    # N = Np1-1
+    idtraj = []
+    for i in range(Np1):
+        taus = InverseDynamics(thetas_traj[i], thetadots_traj[i], thetadotdots_traj[i], g, Ftip_traj[i], M_rels, Glist, Slist)
+        idtraj.append(taus)
+
+    return asarray(idtraj)
+
+
+def ForwardDynamicsTrajectory(thetas_init, thetadots_init, tau_hist, delt, g, Ftip_traj, M_rels, Glist, Slist):   
+    Np1 = len(tau_hist)
+    thetas_traj = asarray(thetas_init)
+    thetadots_traj = asarray(thetadots_init)
+
+    for i in range(Np1):
+        thetadotdots_init = ForwardDynamics(thetas_init, thetadots_init, tau_hist[i], g, Ftip_traj[i], M_rels, Glist, Slist)
+        thetas_next, thetadots_next = EulerStep(thetas_init, thetadots_init, thetadotdots_init, delt)
+        # append new state
+        thetas_traj = hstack((thetas_traj, thetas_next))
+        thetadots_traj = hstack((thetadots_traj, thetadots_next))
+        # update initial conditions
+        thetas_init = thetas_next
+        thetadots_init = thetadots_next
+
+    return thetas_traj.reshape(Np1+1, len(thetas_init)), thetadots_traj.reshape(Np1+1, len(thetas_init))
+
+
+### end of HW5 functions #############################
